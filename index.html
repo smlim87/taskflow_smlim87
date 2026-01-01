@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TASKFLOW</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; letter-spacing: -0.025em; }
+        .holiday-red { color: #ef4444 !important; }
+        .saturday-blue { color: #3b82f6 !important; }
+        .bg-holiday { background-color: #fef2f2 !important; }
+        .bg-saturday { background-color: #eff6ff !important; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        .tag-active { background-color: #f5f3ff; color: #4f46e5 !important; border-left: 3px solid #4f46e5; }
+        .calendar-cell { min-height: 100px; }
+        /* 수정 모드 등에서 깜빡임 방지 */
+        .record-card { transition: transform 0.2s, box-shadow 0.2s; }
+    </style>
+</head>
+<body class="bg-[#F9FAFB] text-slate-900 overflow-hidden text-[14px]">
+    <div class="flex h-screen">
+        <aside class="w-64 border-r border-slate-200 bg-white flex flex-col p-4 shadow-sm z-20">
+            <div class="flex items-center gap-2 px-2 mb-8">
+                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md text-white">
+                    <i data-lucide="check-square" class="w-5 h-5"></i>
+                </div>
+                <h1 class="font-bold text-xl tracking-tighter text-slate-900">TASKFLOW</h1>
+            </div>
+
+            <nav class="space-y-6 flex-1 overflow-y-auto pr-2" id="sidebar-nav">
+                <div class="space-y-1">
+                    <button onclick="clearFilter(); goToday(); setView('day')" id="nav-today" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all text-slate-600 hover:bg-slate-50">
+                        <i data-lucide="zap" class="w-4 h-4"></i> TODAY
+                    </button>
+                </div>
+                <div class="space-y-1">
+                    <p class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Calendar</p>
+                    <button onclick="setView('day')" id="nav-day" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all text-slate-600 hover:bg-slate-50">
+                        <i data-lucide="clock" class="w-4 h-4"></i> DAILY
+                    </button>
+                    <button onclick="setView('week')" id="nav-week" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all text-slate-600 hover:bg-slate-50">
+                        <i data-lucide="columns" class="w-4 h-4"></i> WEEKLY
+                    </button>
+                    <button onclick="setView('month')" id="nav-month" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all text-slate-600 hover:bg-slate-50">
+                        <i data-lucide="calendar" class="w-4 h-4"></i> MONTHLY
+                    </button>
+                </div>
+                <div class="space-y-1 pt-4">
+                    <p class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">RECORD</p>
+                    <button onclick="setView('record')" id="nav-record" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all text-slate-600 hover:bg-slate-50">
+                        <i data-lucide="sticky-note" class="w-4 h-4"></i> Memo
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div class="space-y-1">
+                        <div class="px-3 flex items-center justify-between mb-2">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">#HashTags</p>
+                        </div>
+                        <div id="hashtag-list-active" class="space-y-0.5"></div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="px-3 flex items-center justify-between mb-2">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-slate-300">@HiddenTags</p>
+                            <button onclick="toggleHiddenTagsList()" class="text-slate-300 hover:text-slate-500 transition-colors">
+                                <i id="hashtag-hidden-toggle-icon" data-lucide="eye-off" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        <div id="hashtag-list-hidden" class="space-y-0.5 hidden"></div>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="px-4 mb-4">
+                <button onclick="syncDataWithSheet()" id="sync-btn" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-indigo-200 text-indigo-600 rounded-2xl font-bold text-xs hover:bg-indigo-50 transition-all shadow-sm active:scale-95">
+                    <i data-lucide="refresh-cw" class="w-4 h-4" id="sync-icon"></i>
+                    <span>구글 시트 동기화</span>
+                </button>
+            </div>  
+
+
+
+
+
+            <div class="mt-auto p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50">
+                <p class="text-[11px] text-indigo-400 font-bold uppercase mb-3 tracking-wider">Today's Progress</p>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div id="progress-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-700 ease-out" style="width: 0%"></div>
+                </div>
+                <p id="progress-text" class="text-[11px] text-slate-500 mt-2 font-medium">0/0 완료</p>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-auto flex flex-col relative">
+            <header class="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-30">
+                <div class="flex items-center gap-4">
+                    <div id="header-date-container" class="flex items-center gap-4">
+                        <h2 id="header-date" class="text-lg font-bold text-slate-800">날짜 로딩중...</h2>
+                        <div class="flex items-center bg-slate-100 rounded-xl p-0.5 gap-0.5">
+                            <button onclick="changeDate(-1)" class="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm active:scale-95"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                            <button onclick="goToday()" class="px-3 py-1 text-xs font-bold hover:bg-white rounded-lg transition-all shadow-sm active:scale-95">Today</button>
+                            <button onclick="changeDate(1)" class="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm active:scale-95"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div id="filter-badge" class="hidden flex items-center gap-2 bg-indigo-600 text-white px-3 py-1.5 rounded-full text-xs font-bold animate-fade-in shadow-md">
+                        <span id="filter-tag-name">#TAG</span>
+                        <button onclick="clearFilter()" class="hover:bg-indigo-500 rounded-full p-0.5"><i data-lucide="x" class="w-3 h-3"></i></button>
+                    </div>
+
+                    <div id="week-view-options" class="hidden flex items-center gap-2 ml-2">
+                        <button onclick="toggleWeekDesc()" id="week-desc-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm"><i id="desc-eye-icon" data-lucide="eye" class="w-3.5 h-3.5"></i><span id="desc-toggle-text">메모 표시</span></button>
+                        <button onclick="toggleWeekTag()" id="week-tag-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm"><i id="tag-eye-icon" data-lucide="hash" class="w-3.5 h-3.5"></i><span id="tag-toggle-text">태그 표시</span></button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="openSettings()" class="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="settings" class="w-5 h-5"></i></button>
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white shadow-md flex items-center justify-center text-xs font-black text-white">SM</div>
+                </div>
+            </header>
+
+            <div id="view-container" class="flex-1 p-8 overflow-y-auto"></div>
+
+            <div id="bulk-action-bar" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-6 z-50 translate-y-32 transition-transform duration-300 border border-slate-700">
+                <div class="flex items-center gap-3 pr-6 border-r border-slate-700">
+                    <span id="selected-count" class="bg-indigo-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black">0</span>
+                    <span class="text-xs font-bold">항목 선택됨</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="copySelectedTasks()" class="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl transition-all text-xs font-bold text-indigo-300"><i data-lucide="copy" class="w-4 h-4"></i> 복사하기</button>
+                    <button onclick="deleteSelectedTasks()" class="flex items-center gap-2 px-4 py-2 hover:bg-red-900/50 text-red-400 rounded-xl transition-all text-xs font-bold"><i data-lucide="trash-2" class="w-4 h-4"></i> 일괄 삭제</button>
+                    <button onclick="clearSelection()" class="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl transition-all text-xs font-bold text-slate-500">선택 취소</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-slate-200">
+            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-indigo-500"></i> 환경 설정</h3>
+                <button onclick="closeSettings()" class="p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-8">
+                <div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Calendar Preferences</p>
+                    <div class="space-y-3">
+                        <p class="text-sm font-bold text-slate-700 mb-2">시작 요일 설정</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="updateWeekStart(1)" id="start-mon" class="p-3 rounded-2xl border-2 transition-all text-sm font-bold flex flex-col items-center gap-2">월요일 시작</button>
+                            <button onclick="updateWeekStart(0)" id="start-sun" class="p-3 rounded-2xl border-2 transition-all text-sm font-bold flex flex-col items-center gap-2">일요일 시작</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-5 bg-slate-50/50 border-t border-slate-100 flex justify-end">
+                <button onclick="closeSettings()" class="bg-indigo-600 text-white px-6 py-2.5 rounded-2xl hover:bg-indigo-700 transition-all font-bold text-sm shadow-lg shadow-indigo-100 active:scale-95">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="copy-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-slate-200">
+            <div class="p-6">
+                <h3 class="font-bold text-slate-800 text-lg mb-1">업무 복사하기</h3>
+                <p class="text-xs text-slate-400 mb-6">선택한 업무를 다른 날짜로 복제합니다.</p>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Target Date</label>
+                        <input type="date" id="copy-target-date" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm transition-all font-bold">
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-slate-50/50 flex justify-end gap-2">
+                <button onclick="closeCopyModal()" class="px-4 py-2 text-sm font-bold text-slate-400 hover:text-slate-600">취소</button>
+                <button onclick="confirmCopy()" class="bg-indigo-600 text-white px-5 py-2 rounded-xl hover:bg-indigo-700 transition-all font-bold text-sm shadow-md">복사 실행</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="script.js"></script>
+</body>
+</html>
