@@ -1,7 +1,7 @@
 // script.js
 
 // 보안을 위해 URL은 별도로 관리하는 것이 좋습니다 (아래 3번 참고)
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyq0Sy8Zgxn-5aXsxmFdZH6nE3AAjFWc3xMzAldZy0jQs9u4T2f5iZIDkExDurSElu0/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyFOW3H7RP_TOeRd1RvSYlCTRbbaXMi5KDx4anTDSyxmKScbVwcDaMwTok0Oh0J4ZLw/exec";
 
 async function syncDataWithSheet() {
     const syncBtn = document.getElementById('sync-btn');
@@ -106,7 +106,8 @@ function getBgClass(date) {
 }
 
 // --- Initialization ---
-function init() {
+async function init() {
+    await loadDataFromSheet(); // 페이지 로드 시 시트에서 데이터 가져오기
     render();
     lucide.createIcons();
 }
@@ -967,4 +968,40 @@ function confirmCopy() {
     render();
 }
 
+
 window.onload = init;
+
+// script.js 상단
+
+// 1. 데이터를 서버(구글 시트)에서 불러오는 함수
+async function loadDataFromServer() {
+    const syncBtn = document.getElementById('sync-btn');
+    if (syncBtn) syncBtn.innerText = "데이터 로딩 중...";
+
+    try {
+        const response = await fetch(GAS_WEB_APP_URL);
+        const data = await response.json();
+        
+        // 서버 데이터가 있으면 덮어씌우기
+        if (data.tasks && data.tasks.length > 0) tasks = data.tasks;
+        if (data.records && data.records.length > 0) records = data.records;
+        
+        console.log("시트 데이터 로드 완료");
+    } catch (error) {
+        console.error("데이터 로드 실패:", error);
+    } finally {
+        if (syncBtn) syncBtn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i> <span>구글 시트 동기화</span>`;
+        render(); // 로드된 데이터로 화면 갱신
+        lucide.createIcons();
+    }
+}
+
+// 2. init 함수 수정 (초기 로드 시 호출)
+async function init() {
+    // 먼저 서버 데이터를 가져온 후 렌더링함
+    await loadDataFromServer(); 
+}
+
+// 3. 기존 syncDataWithSheet 함수 보완
+// (기존 코드 유지하되, POST 시에도 mode: 'cors'를 사용하고 싶다면 
+//  GAS 응답 처리가 필요하나, 'no-cors' 상태로도 시트 저장은 동작합니다.)
