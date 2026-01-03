@@ -1,7 +1,7 @@
 // script.js
 
 // 1. 보안 및 설정 관련
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxdlRMSfLla_FLr6lWrC-VpaAu4t17xll385Adc84kB6WVekgc436222M-tt1a271Tv/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzAGmh0OFpCpSDTriwngEXxGW_52C4Rb7fpaXeg3-kjo4zziNSCPFpqZ3vlDv5gyswp/exec";
 
 // --- State ---
 let currentView = 'day';
@@ -12,6 +12,8 @@ let weekStartDay = 1; // 1: 월요일 시작, 0: 일요일 시작
 let filterTag = null; 
 let hiddenTags = new Set(); 
 let isHiddenTagsListVisible = false;
+let editingTaskColor = 'bg-white'; // 수정 중인 업무 배경색
+let editingTagStyle = 'text-indigo-600 bg-indigo-100'; // 수정 중인 태그 색상
 
 // 고정 메모 (View별 독립 저장용)
 let pinnedMemos = {}; 
@@ -44,7 +46,101 @@ const holidays = {
     '8-15': '광복절', '10-3': '개천절', '10-9': '한글날', '12-25': '성탄절'
 };
 
+
+// --- 일정 및 태그 색상 설정 ---
+let selectedTaskColor = 'bg-white'; // 현재 선택된 입력 색상
+const taskColors = [
+    { name: '기본', class: 'bg-white' },
+    { name: '중요(레드)', class: 'bg-red-50' },
+    { name: '주의(옐로우)', class: 'bg-yellow-50' },
+    { name: '참고(블루)', class: 'bg-blue-50' },
+    { name: '성공(그린)', class: 'bg-green-50' }
+];
+
+
+// --- [수정] 태그 상태 관리 변수 ---
+let frequentTags = ["WORK", "PROJECT", "STUDY"]; // 여기에 적힌 태그들이 입력창 상단에 버튼으로 고정됩니다.
+let tagColorMap = {
+    "WORK": "text-blue-600 bg-blue-100",
+    "PROJECT": "text-purple-600 bg-purple-100",
+    "STUDY": "text-emerald-600 bg-emerald-100"
+};
+let selectedNewTagColor = "text-indigo-600 bg-indigo-100"; // 기본 태그 색상
+
+const tagColorOptions = [
+    { name: 'Blue', class: 'text-blue-600 bg-blue-100' },
+    { name: 'Purple', class: 'text-purple-600 bg-purple-100' },
+    { name: 'Red', class: 'text-red-600 bg-red-100' },
+    { name: 'Green', class: 'text-emerald-600 bg-emerald-100' },
+    { name: 'Orange', class: 'text-orange-600 bg-orange-100' },
+    { name: 'Pink', class: 'text-pink-600 bg-pink-100' }
+];
+
+// --- [태그 전용 색상 옵션] ---
+const tagStyles = [
+    { name: 'Indigo', class: 'text-indigo-600 bg-indigo-100' },
+    { name: 'Red', class: 'text-red-600 bg-red-100' },
+    { name: 'Blue', class: 'text-blue-600 bg-blue-100' },
+    { name: 'Green', class: 'text-emerald-600 bg-emerald-100' },
+    { name: 'Orange', class: 'text-orange-600 bg-orange-100' },
+    { name: 'Pink', class: 'text-pink-600 bg-pink-100' }
+];
+let selectedNewTagStyle = tagStyles[0].class; // 기본 선택 색상 (Indigo)
+
 // --- Utilities ---
+// 설정창 열 때 태그 목록 그리기
+function openSettings() {
+    document.getElementById('settings-modal').classList.remove('hidden');
+    renderTagSettings();
+    updateToggleUI(); // 기존 설정 유지용
+}
+
+function closeSettings() {
+    document.getElementById('settings-modal').classList.add('hidden');
+    render(); // 메인 화면 갱신 (드롭다운 등)
+}
+
+function renderTagSettings() {
+    const list = document.getElementById('custom-tag-list');
+    const picker = document.getElementById('tag-color-picker');
+    
+    // 색상 피커 생성
+    picker.innerHTML = tagColorOptions.map(c => `
+        <button onclick="selectedNewTagColor='${c.class}'; renderTagSettings()" 
+            class="w-6 h-6 rounded-full ${c.class.split(' ')[1]} border-2 ${selectedNewTagColor === c.class ? 'border-slate-600' : 'border-transparent'}"></button>
+    `).join('');
+
+    // 태그 목록 생성
+    list.innerHTML = frequentTags.map(tag => `
+        <div class="flex items-center gap-1 px-2 py-1 rounded-lg ${tagColorMap[tag]} text-[10px] font-bold">
+            #${tag}
+            <button onclick="removeCustomTag('${tag}')" class="hover:text-red-500"><i data-lucide="x" class="w-3 h-3"></i></button>
+        </div>
+    `).join('');
+    lucide.createIcons();
+}
+
+async function addCustomTag() {
+    const input = document.getElementById('custom-tag-name');
+    const name = input.value.trim().toUpperCase();
+    if (!name) return alert("태그 이름을 입력하세요.");
+    if (frequentTags.includes(name)) return alert("이미 존재하는 태그입니다.");
+
+    frequentTags.push(name);
+    tagColorMap[name] = selectedNewTagColor;
+    input.value = '';
+    renderTagSettings();
+    await syncDataWithSheet(); // 즉시 동기화
+}
+
+async function removeCustomTag(tag) {
+    if (!confirm(`'#${tag}' 태그를 삭제할까요?`)) return;
+    frequentTags = frequentTags.filter(t => t !== tag);
+    delete tagColorMap[tag];
+    renderTagSettings();
+    await syncDataWithSheet();
+}
+
 function isHoliday(date) {
     const key = `${date.getMonth() + 1}-${date.getDate()}`;
     return holidays[key] || false;
@@ -111,7 +207,8 @@ async function syncDataWithSheet() {
         type: 'sync_all',
         tasks: tasks,
         records: records,
-        pinnedMemos: pinnedMemos 
+        pinnedMemos: pinnedMemos,
+        tagColorMap: tagColorMap // 태그 정보 추가 전송
     };
 
     try {
@@ -142,7 +239,11 @@ async function loadDataFromServer() {
         if (data.tasks) tasks = data.tasks;
         if (data.records) records = data.records;
         if (data.pinnedMemos) pinnedMemos = data.pinnedMemos;
-        
+        if (data.tagSettings) {
+            frequentTags = data.tagSettings.frequentTags;
+            tagColorMap = data.tagSettings.tagColorMap;
+        }
+
         console.log("서버 데이터 로드 완료");
     } catch (error) {
         console.error("데이터 로드 실패:", error);
@@ -233,93 +334,153 @@ function updatePinnedMemo(val) {
     triggerAutoSync(); // 이제 입력할 때마다 구글 시트에 자동 저장됩니다.
 }
 
-// --- View Renderer: Day ---
 function renderDayView(container) {
     const dayTasksFiltered = tasks.filter(t => t.date === selectedDate.toDateString() && (!filterTag || t.category === filterTag));
-    const allSelected = dayTasksFiltered.length > 0 && dayTasksFiltered.every(t => selectedTaskIds.has(t.id));
     
     const dayContent = `
         <div class="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
             <div class="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-200 overflow-hidden mb-6">
-                <div class="p-6 bg-slate-50/30 space-y-3">
-                    <div class="flex gap-2">
-                        <input id="new-task-input" type="text" placeholder="할 일을 입력하세요..." class="flex-[3] bg-white border border-slate-200 rounded-2xl px-5 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm transition-all shadow-sm">
-                        <div class="flex-1 relative">
-                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">#</span>
-                            <input id="new-tag-input" type="text" placeholder="태그" class="w-full bg-white border border-slate-200 rounded-2xl pl-8 pr-4 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm transition-all shadow-sm uppercase font-bold text-indigo-600">
+                <div class="p-6 bg-slate-50/30 space-y-4">
+                    <input id="new-task-input" type="text" placeholder="할 일을 입력하세요..." class="w-full bg-white border border-slate-200 rounded-2xl px-5 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm shadow-sm font-bold">
+                    
+                    <div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+                        <div class="flex gap-2">
+                            <div class="flex-1 relative">
+                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 font-black">#</span>
+                                <input id="new-tag-input" type="text" placeholder="새 태그 입력" class="w-full bg-slate-50 border-none rounded-xl pl-8 pr-4 py-2 text-xs font-bold text-indigo-600 uppercase outline-none focus:ring-2 focus:ring-indigo-100">
+                            </div>
+                            <button onclick="pinCurrentTag()" class="px-4 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase shadow-md hover:bg-indigo-700 transition-all">목록에 고정/수정</button>
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] font-black text-slate-400 uppercase">태그 색상:</span>
+                            <div class="flex gap-1.5">
+                                ${tagColorOptions.map(s => `
+                                    <button onclick="selectedNewTagColor='${s.class}'; render()" 
+                                        class="w-4 h-4 rounded-full ${s.class.split(' ')[1]} border-2 ${selectedNewTagColor === s.class ? 'border-slate-600' : 'border-transparent'} transition-all"></button>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-1.5 pt-2 border-t border-slate-50">
+                            ${frequentTags.map(tag => `
+                                <div class="group relative flex items-center">
+                                    <button onclick="document.getElementById('new-tag-input').value='${tag}'" class="pl-2.5 pr-6 py-1 rounded-lg text-[10px] font-bold transition-all ${tagColorMap[tag] || 'bg-slate-100 text-slate-600'}">
+                                        #${tag}
+                                    </button>
+                                    <button onclick="removeFrequentTag('${tag}')" class="absolute right-1 p-0.5 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                        <i data-lucide="x" class="w-3 h-3"></i>
+                                    </button>
+                                </div>
+                            `).join('')}
                         </div>
                     </div>
-                    <textarea id="new-desc-input" placeholder="상세 내용 (선택사항)" rows="2" class="w-full bg-white border border-slate-200 rounded-2xl px-5 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm transition-all shadow-sm resize-none"></textarea>
-                    <div class="flex gap-2">
-                        <button onclick="addTask()" class="flex-1 bg-indigo-600 text-white py-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg font-bold text-sm flex items-center justify-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> 일정 추가</button>
-                        ${clipboard.length > 0 ? `<button onclick="pasteTasks()" class="px-6 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-bold text-sm flex items-center gap-2"><i data-lucide="clipboard" class="w-4 h-4"></i> 붙여넣기 (${clipboard.length})</button>` : ''}
+
+                    <textarea id="new-desc-input" oninput="autoResize(this)" placeholder="상세 내용" rows="1" class="auto-resize-textarea w-full bg-white border border-slate-200 rounded-2xl px-5 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-sm shadow-sm resize-none"></textarea>
+                    
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <div class="flex gap-2 items-center">
+                            <span class="text-[9px] font-black text-slate-400 uppercase mr-1">업무 강조:</span>
+                            ${taskColors.map(c => `<button onclick="selectedTaskColor='${c.class}'; document.querySelectorAll('.task-color-dot').forEach(d=>d.classList.remove('ring-2')); event.target.classList.add('ring-2','ring-slate-400')" class="task-color-dot w-5 h-5 rounded-full ${c.class} border border-slate-200 transition-all"></button>`).join('')}
+                        </div>
+                        <button onclick="addTask()" class="bg-indigo-600 text-white px-8 py-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg font-bold text-sm">일정 등록</button>
                     </div>
                 </div>
             </div>
-            <div class="flex items-center justify-between px-4 mb-3">
-                <div class="flex items-center gap-3">
-                    <input type="checkbox" onchange="toggleSelectAll()" ${allSelected ? 'checked' : ''} id="select-all-cb" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
-                    <label for="select-all-cb" class="text-xs font-bold text-slate-400 cursor-pointer select-none">전체 선택</label>
-                </div>
-            </div>
+
             <div id="task-list" class="space-y-3"></div>
         </div>`;
     
     container.innerHTML += dayContent; 
-    const taskList = document.getElementById('task-list');
-    
-    if (dayTasksFiltered.length === 0) {
-        taskList.innerHTML = `<div class="py-20 text-center text-slate-300 font-medium bg-white rounded-3xl border border-dashed border-slate-200">일정이 없습니다.</div>`;
-    } else {
-        dayTasksFiltered.forEach((task) => {
-            const isSelected = selectedTaskIds.has(task.id);
-            const item = document.createElement('div');
-            item.className = `group bg-white border transition-all hover:shadow-md rounded-2xl p-4 ${isSelected ? 'border-indigo-400 bg-indigo-50/20 ring-1 ring-indigo-400' : 'border-slate-200'}`;
-            
-            if (editingId === task.id) {
-                item.innerHTML = `
-                    <div class="flex flex-col gap-3">
-                        <div class="flex gap-2">
-                            <input id="edit-text-${task.id}" type="text" value="${task.text}" class="flex-[3] bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold">
-                            <input id="edit-tag-${task.id}" type="text" value="${task.category}" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm uppercase font-black text-indigo-500">
-                        </div>
-                        <textarea id="edit-desc-${task.id}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm resize-none" rows="2">${task.desc || ''}</textarea>
-                        <div class="flex justify-end gap-2">
-                            <button onclick="cancelEdit()" class="px-4 py-2 text-xs font-bold text-slate-400">취소</button>
-                            <button onclick="saveEdit(${task.id})" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md">저장</button>
-                        </div>
-                    </div>`;
-            } else {
-                item.innerHTML = `
-                    <div class="flex items-start gap-4">
-                        <div class="mt-1 flex items-center gap-3">
-                            <input type="checkbox" onchange="toggleTaskSelection(${task.id})" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer">
-                        </div>
-                        <button onclick="toggleTask(${task.id})" class="mt-1 transition-all hover:scale-110 shrink-0">
-                            ${task.completed ? '<i data-lucide="check-circle-2" class="text-indigo-500 w-6 h-6"></i>' : '<i data-lucide="circle" class="text-slate-300 w-6 h-6"></i>'}
-                        </button>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <p class="text-[15px] font-bold tracking-tight ${task.completed ? 'line-through text-slate-300' : 'text-slate-700'}">${task.text}</p>
-                                <span class="text-[10px] text-indigo-400 font-black shrink-0">#${task.category}</span>
-                            </div>
-                            ${task.desc ? `<p class="mt-1 text-[13px] text-slate-400 leading-relaxed line-clamp-2">${task.desc}</p>` : ''}
-                        </div>
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                            <button onclick="openCopyModal(${task.id})" class="p-2 text-slate-300 hover:text-indigo-500 rounded-xl"><i data-lucide="copy" class="w-4 h-4"></i></button>
-                            <button onclick="startEdit(${task.id})" class="p-2 text-slate-300 hover:text-indigo-500 rounded-xl"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-                            <button onclick="deleteTask(${task.id})" class="p-2 text-slate-300 hover:text-red-500 rounded-xl"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </div>
-                    </div>`;
-            }
-            taskList.appendChild(item);
-        });
-    }
-    const input = document.getElementById('new-task-input');
-    if(input) input.addEventListener('keypress', e => e.key === 'Enter' && addTask());
+    renderTaskList(dayTasksFiltered);
+    lucide.createIcons();
 }
 
-// --- View Renderer: Week ---
+function renderTaskList(dayTasks) {
+    const taskList = document.getElementById('task-list');
+    if (!taskList) return;
+
+    dayTasks.forEach((task) => {
+        const isSelected = selectedTaskIds.has(task.id);
+        const item = document.createElement('div');
+        
+        // 드래그 기능 및 스타일
+        item.draggable = editingId !== task.id;
+        item.ondragstart = (e) => handleTaskDragStart(e, task.id);
+        item.ondragover = (e) => handleTaskDragOver(e);
+        item.ondrop = (e) => handleTaskDrop(e, task.id);
+        item.className = `group border transition-all hover:shadow-md rounded-2xl ${isSelected ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-slate-200'} ${!task.desc ? 'p-3' : 'p-4'} ${task.color || 'bg-white'}`;
+        
+        if (editingId === task.id) {
+            // [수정 모드 UI]
+            item.innerHTML = `
+                <div class="flex flex-col gap-3">
+                    <input id="edit-text-${task.id}" type="text" value="${task.text}" class="w-full bg-white/80 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none">
+                    
+                    <div class="bg-white/50 p-3 rounded-xl border border-slate-100 space-y-2">
+                        <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 font-black">#</span>
+                            <input id="edit-tag-${task.id}" type="text" value="${task.category}" class="w-full bg-white border-none rounded-lg pl-6 pr-3 py-1.5 text-xs font-bold text-indigo-600 uppercase outline-none">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] font-black text-slate-400 uppercase">태그 색상:</span>
+                            <div class="flex gap-1">
+                                ${tagColorOptions.map(s => `
+                                    <button onclick="editingTagStyle='${s.class}'; render()" 
+                                        class="w-3.5 h-3.5 rounded-full ${s.class.split(' ')[1]} border ${editingTagStyle === s.class ? 'ring-2 ring-slate-400' : ''}"></button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <textarea id="edit-desc-${task.id}" oninput="autoResize(this)" class="auto-resize-textarea w-full bg-white/80 border border-slate-200 rounded-xl px-4 py-2 text-sm resize-none outline-none" rows="1">${task.desc || ''}</textarea>
+                    
+                    <div class="flex justify-between items-center pt-2 border-t border-black/5">
+                        <div class="flex gap-1.5 items-center">
+                            <span class="text-[9px] font-black text-slate-400 uppercase mr-1">업무 강조:</span>
+                            ${taskColors.map(c => `
+                                <button onclick="editingTaskColor='${c.class}'; render()" 
+                                    class="w-4 h-4 rounded-full ${c.class} border ${editingTaskColor === c.class ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}"></button>
+                            `).join('')}
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="cancelEdit()" class="px-4 py-1 text-xs font-bold text-slate-400">취소</button>
+                            <button onclick="saveEdit(${task.id})" class="bg-indigo-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-md">저장</button>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            // [일반 모드 UI]
+            item.innerHTML = `
+                <div class="flex items-start gap-4">
+                    <div class="mt-1 text-slate-300 group-hover:text-slate-400 cursor-grab"><i data-lucide="grip-vertical" class="w-4 h-4"></i></div>
+                    <button onclick="toggleTask(${task.id})" class="mt-1 shrink-0">
+                        ${task.completed ? '<i data-lucide="check-circle-2" class="text-indigo-500 w-6 h-6"></i>' : '<i data-lucide="circle" class="text-slate-300 w-6 h-6"></i>'}
+                    </button>
+                    <div class="flex-1 min-w-0 text-left">
+                        <div class="flex items-center gap-2">
+                            <p class="text-[15px] font-bold ${task.completed ? 'line-through text-slate-300' : 'text-slate-700'}">${task.text}</p>
+                            <span class="text-[10px] font-black px-2 py-0.5 rounded-md ${getTagStyle(task.category)}">#${task.category}</span>
+                        </div>
+                        ${task.desc ? `<p class="mt-1 text-[13px] text-slate-400 whitespace-pre-wrap leading-relaxed">${task.desc}</p>` : ''}
+                    </div>
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button onclick="startEdit(${task.id})" class="p-2 text-slate-300 hover:text-indigo-500"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        <button onclick="deleteTask(${task.id})" class="p-2 text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                </div>`;
+        }
+        taskList.appendChild(item);
+    });
+}
+
+// 태그 스타일 함수 (이것도 꼭 있어야 합니다)
+function getTagStyle(tag) {
+    return tagColorMap[tag.toUpperCase()] || "text-indigo-400 bg-indigo-50"; 
+}
+
+
+/// --- View Renderer: Week (순서 변경 및 드래그 앤 드롭 추가 버전) ---
 function renderWeekView(container) {
     const filtered = getFilteredTasks();
     const weekDays = [];
@@ -328,9 +489,7 @@ function renderWeekView(container) {
     let diff = (weekStartDay === 1) ? (dayNum === 0 ? -6 : 1 - dayNum) : -dayNum;
     start.setDate(start.getDate() + diff);
     for (let i = 0; i < 7; i++) { 
-        const d = new Date(start); 
-        d.setDate(d.getDate() + i); 
-        weekDays.push(d); 
+        const d = new Date(start); d.setDate(d.getDate() + i); weekDays.push(d); 
     }
     
     let weekHtml = `<div class="grid grid-cols-7 gap-1 min-h-[calc(100vh-250px)] bg-slate-200 border-t border-slate-200 rounded-3xl overflow-hidden shadow-inner">`; 
@@ -349,22 +508,38 @@ function renderWeekView(container) {
                 </div>
                 <div class="flex-1 p-2 space-y-2 overflow-y-auto">
                     ${dayTasks.map(t => {
+                        const isSelected = selectedTaskIds.has(t.id);
+                        const isCompact = !showWeekTag && (!showWeekDesc || !t.desc);
+                        
                         return `
-                            <div class="group relative bg-white border ${t.completed ? 'opacity-60 border-slate-100' : 'border-slate-200 shadow-sm hover:border-indigo-300'} rounded-xl p-3 transition-all">
-                                <div class="flex items-start gap-2 ${(!showWeekTag && !showWeekDesc && !t.desc) ? '' : 'mb-1'}">
+                            <div class="group relative border ${t.completed ? 'opacity-60 border-slate-100' : 'border-slate-200 shadow-sm hover:border-indigo-300'} rounded-xl transition-all cursor-grab active:cursor-grabbing ${isSelected ? 'border-indigo-400 ring-1 ring-indigo-400' : ''} 
+                                ${isCompact ? 'p-2' : 'p-3'} ${t.color || 'bg-white'}"
+                                draggable="true"
+                                ondragstart="handleTaskDragStart(event, ${t.id})"
+                                ondragover="handleTaskDragOver(event)"
+                                ondrop="handleTaskDrop(event, ${t.id})"
+                                ondragend="handleTaskDragEnd(event)">
+                                
+                                <div class="flex items-start gap-2 ${isCompact ? '' : 'mb-1'}">
+                                    <div class="mt-1 text-slate-300 group-hover:text-slate-400"><i data-lucide="grip-vertical" class="w-3 h-3"></i></div>
+                                    
+                                    <input type="checkbox" onchange="toggleTaskSelection(${t.id})" ${isSelected ? 'checked' : ''} class="mt-1 w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 cursor-pointer">
                                     <button onclick="toggleTask(${t.id})" class="mt-0.5 shrink-0 transition-transform active:scale-90">
                                         ${t.completed ? '<i data-lucide="check-circle-2" class="text-indigo-500 w-3.5 h-3.5"></i>' : '<i data-lucide="circle" class="text-slate-300 w-3.5 h-3.5"></i>'}
                                     </button>
                                     <p class="text-[12px] font-bold leading-tight break-all ${t.completed ? 'line-through text-slate-400' : 'text-slate-700'}">${t.text}</p>
                                 </div>
-                                ${ (showWeekTag || t.desc) ? `
-                                <div class="flex items-center justify-between mt-1">
-                                    ${showWeekTag ? `<p class="text-[9px] text-indigo-400 font-bold uppercase tracking-tighter">#${t.category}</p>` : '<div></div>'}
+
+                                ${ (showWeekTag || !isCompact) ? `
+                                <div class="flex items-center justify-between ${isCompact ? '' : 'mt-1'}">
+                                    ${showWeekTag ? `<p class="text-[9px] font-black uppercase tracking-tighter px-1.5 rounded ${getTagStyle(t.category)}">#${t.category}</p>` : '<div></div>'}
                                     <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onclick="startEdit(${t.id})" class="p-1 text-slate-300 hover:text-indigo-500"><i data-lucide="pencil" class="w-3 h-3"></i></button>
-                                        <button onclick="deleteTask(${t.id})" class="p-1 text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                                        <button onclick="openCopyModal(${t.id})" class="p-1 text-slate-300 hover:text-indigo-500" title="복사"><i data-lucide="copy" class="w-3 h-3"></i></button>
+                                        <button onclick="startEdit(${t.id})" class="p-1 text-slate-300 hover:text-indigo-500" title="수정"><i data-lucide="pencil" class="w-3 h-3"></i></button>
+                                        <button onclick="deleteTask(${t.id})" class="p-1 text-slate-300 hover:text-red-500" title="삭제"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
                                     </div>
                                 </div>` : ''}
+
                                 ${(showWeekDesc && t.desc) ? `<p class="mt-1.5 text-[10px] text-slate-400 italic leading-snug border-l-2 border-slate-100 pl-1.5 break-all whitespace-pre-wrap">${t.desc}</p>` : ''}
                             </div>`;
                     }).join('')}
@@ -374,9 +549,11 @@ function renderWeekView(container) {
     });
     weekHtml += `</div>`;
     container.innerHTML += weekHtml;
+    lucide.createIcons(); // 아이콘 재생성 필수
 }
 
 // --- View Renderer: Month ---
+// --- View Renderer: Month (업무 표시 개수 6개로 확장) ---
 function renderMonthView(container) {
     const year = selectedDate.getFullYear();
     const month = selectedDate.getMonth();
@@ -407,13 +584,13 @@ function renderMonthView(container) {
                 <div class="text-xs font-bold ${isToday ? 'bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-md' : colorClass || 'text-slate-700'}">${d}</div>
                 ${dayTasks.length > 0 ? `
                     <div class="mt-2 space-y-1">
-                        ${dayTasks.slice(0, 3).map(t => `
+                        ${dayTasks.slice(0, 6).map(t => `
                             <div class="flex items-center gap-1">
                                 <div class="w-1.5 h-1.5 rounded-full ${t.completed ? 'bg-slate-300' : 'bg-indigo-400'}"></div>
                                 <span class="text-[9px] truncate ${t.completed ? 'text-slate-300 line-through' : 'text-slate-600 font-medium'}">${t.text}</span>
                             </div>
                         `).join('')}
-                        ${dayTasks.length > 3 ? `<div class="text-[9px] text-slate-400 pl-2.5">+${dayTasks.length - 3} more</div>` : ''}
+                        ${dayTasks.length > 6 ? `<div class="text-[9px] text-slate-400 pl-2.5">+${dayTasks.length - 6} more</div>` : ''}
                     </div>
                 ` : ''}
             </div>
@@ -590,22 +767,24 @@ function renderRecordView(container) {
 
 // --- Logic Functions (with Sync) ---
 
-async function addTask() {
-    const text = document.getElementById('new-task-input').value.trim();
-    if (!text) return;
-    
-    const newTask = { 
-        id: Date.now(), 
-        text, 
-        desc: document.getElementById('new-desc-input').value.trim(), 
-        date: selectedDate.toDateString(), 
-        completed: false, 
-        category: (document.getElementById('new-tag-input').value.trim() || "WORK").toUpperCase() 
-    };
-    
-    tasks.push(newTask);
-    render();
-    await triggerAutoSync();
+// 입력창 색상 선택 시 시각적 표시 기능
+function selectTaskInputColor(colorClass, btn) {
+    selectedTaskColor = colorClass;
+    // 모든 버튼의 강조 표시를 지우고 클릭한 것만 표시
+    document.querySelectorAll('.task-color-dot').forEach(b => {
+        b.classList.remove('ring-2', 'ring-slate-400', 'ring-offset-1');
+    });
+    btn.classList.add('ring-2', 'ring-slate-400', 'ring-offset-1');
+}
+
+// 태그 선택 드롭다운 토글
+function toggleTagInput(selectEl) {
+    const directBox = document.getElementById('direct-tag-box');
+    if (selectEl.value === 'DIRECT') {
+        directBox.classList.remove('hidden');
+    } else {
+        directBox.classList.add('hidden');
+    }
 }
 
 async function toggleTask(id) { 
@@ -622,20 +801,33 @@ async function deleteSelectedTasks() {
     await triggerAutoSync(); // 구글 시트에 즉시 반영
 }
 
+// --- [수정] 할 일 저장 기능 ---
 async function saveEdit(id) {
     const text = document.getElementById(`edit-text-${id}`).value.trim();
-    const tag = document.getElementById(`edit-tag-${id}`) ? document.getElementById(`edit-tag-${id}`).value.trim().replace('#','') : null;
+    const tag = document.getElementById(`edit-tag-${id}`).value.trim().toUpperCase();
     const desc = document.getElementById(`edit-desc-${id}`).value.trim();
-    if (!text) return;
+    
+    // 만약 수정 중에 색상을 클릭했다면 editingTaskColor를 사용하고, 아니면 기존 색상을 유지합니다.
+    const existingTask = tasks.find(t => t.id === id);
+    const color = editingTaskColor || existingTask.color || 'bg-white'; 
+
+    if (!text) return alert("내용을 입력해주세요.");
+
     tasks = tasks.map(t => {
         if (t.id === id) {
-            return { ...t, text, desc, category: tag ? tag.toUpperCase() : t.category };
+            return { ...t, text, desc, category: tag, color: color };
         }
         return t;
     });
+
     editingId = null; 
-    render();
+    editingTaskColor = null; // 초기화
+    render(); 
     await triggerAutoSync();
+}
+
+function getTagStyle(tag) {
+    return tagColorMap[tag.toUpperCase()] || "text-indigo-400 bg-indigo-50"; 
 }
 
 async function addRecord() {
@@ -697,7 +889,13 @@ function handleRecordSearch(val) {
     });
 }
 
-function startEdit(id) { editingId = id; render(); }
+function startEdit(id) {
+    editingId = id;
+    const task = tasks.find(t => t.id === id);
+    editingTaskColor = task.color || 'bg-white';
+    editingTagStyle = tagColorMap[task.category] || 'text-indigo-600 bg-indigo-100';
+    render(); 
+}
 function cancelEdit() { editingId = null; render(); }
 
 function toggleRecord(id) {
@@ -860,5 +1058,324 @@ function cancelEditRecord() {
     editingRecordId = null;
     render();
 }
+
+
+// ==========================================
+// 1. 일정(TASK) 복사 및 붙여넣기 기능
+// ==========================================
+
+// [일괄 복사] 선택한 일정들을 클립보드에 담기
+function copySelectedTasks() {
+    if (selectedTaskIds.size === 0) return alert("복사할 일정을 선택해주세요.");
+    clipboard = tasks.filter(t => selectedTaskIds.has(t.id)).map(t => ({ ...t }));
+    selectedTaskIds.clear();
+    render();
+    alert(`${clipboard.length}개의 일정이 복사되었습니다. 원하는 날짜로 이동해 '붙여넣기' 버튼을 누르세요.`);
+}
+
+// [붙여넣기] 클립보드의 내용을 현재 날짜로 복사
+async function pasteTasks() {
+    if (clipboard.length === 0) return;
+    
+    const newTasks = clipboard.map(t => ({
+        ...t,
+        id: Date.now() + Math.random(), // 겹치지 않는 새 ID 생성
+        date: selectedDate.toDateString(), // 현재 보고 있는 날짜로 설정
+        completed: false // 복사본은 미완료 상태로
+    }));
+    
+    tasks = [...tasks, ...newTasks];
+    render();
+    await triggerAutoSync(); // 구글 시트 동기화
+    alert("일정이 붙여넣기 되었습니다.");
+}
+
+// [개별 복사 창 열기]
+function openCopyModal(id) {
+    taskToCopy = tasks.find(t => t.id === id);
+    const modal = document.getElementById('copy-modal');
+    if(modal) {
+        modal.classList.remove('hidden');
+        // 오늘 날짜를 기본값으로 설정
+        document.getElementById('copy-target-date').value = new Date().toISOString().split('T')[0];
+    }
+}
+
+// [개별 복사 취소]
+function closeCopyModal() {
+    document.getElementById('copy-modal').classList.add('hidden');
+    taskToCopy = null;
+}
+
+// [개별 복사 실행] 날짜 선택 후 복사 확인 눌렀을 때
+async function confirmCopy() {
+    const targetDateStr = document.getElementById('copy-target-date').value;
+    if (!targetDateStr || !taskToCopy) return;
+    
+    const targetDate = new Date(targetDateStr).toDateString();
+    const newTask = {
+        ...taskToCopy,
+        id: Date.now(),
+        date: targetDate,
+        completed: false
+    };
+    
+    tasks.push(newTask);
+    closeCopyModal();
+    render();
+    await triggerAutoSync();
+    alert("해당 날짜로 일정이 복사되었습니다.");
+}
+
+// 선택 해제
+function clearSelection() {
+    selectedTaskIds.clear();
+    render();
+}
+
+// 체크박스 토글 (일정)
+function toggleTaskSelection(id) {
+    if (selectedTaskIds.has(id)) selectedTaskIds.delete(id);
+    else selectedTaskIds.add(id);
+    updateBulkActionBar();
+    render();
+}
+
+
+// ==========================================
+// 2. 메모(RECORD) 복사 및 붙여넣기 기능
+// ==========================================
+
+// [개별 복사] 메모 카드에서 복사 버튼 클릭
+function copyRecord(id) {
+    const rec = records.find(r => r.id === id);
+    if (rec) {
+        recordClipboard = [{ ...rec }];
+        alert("메모가 복사되었습니다. '붙여넣기' 버튼을 누르면 상단에 추가됩니다.");
+        render();
+    }
+}
+
+// [일괄 복사] 선택한 메모들을 클립보드에 담기
+function copySelectedRecords() {
+    if (selectedRecordIds.size === 0) return alert("복사할 메모를 선택해주세요.");
+    recordClipboard = records.filter(r => selectedRecordIds.has(r.id)).map(r => ({ ...r }));
+    selectedRecordIds.clear();
+    render();
+    alert(`${recordClipboard.length}개의 메모가 복사되었습니다.`);
+}
+
+// [붙여넣기] 클립보드 내용을 메모 리스트 상단에 추가
+async function pasteRecords() {
+    if (recordClipboard.length === 0) return;
+    
+    const newRecords = recordClipboard.map(r => ({
+        ...r,
+        id: Date.now() + Math.random(),
+        collapsed: false
+    }));
+    
+    records = [...newRecords, ...records];
+    render();
+    await triggerAutoSync();
+    alert("메모가 붙여넣기 되었습니다.");
+}
+
+// 체크박스 토글 (메모)
+function toggleRecordSelection(id) {
+    if (selectedRecordIds.has(id)) selectedRecordIds.delete(id);
+    else selectedRecordIds.add(id);
+    render();
+}
+
+// 메모 전체 선택 토글
+function toggleSelectAllRecords() {
+    // 현재 화면에 보이는 메모들만 필터링해서 선택
+    const visibleRecords = records.filter(rec => {
+        const matchesSearch = rec.title.toLowerCase().includes(recordSearchQuery) || rec.content.toLowerCase().includes(recordSearchQuery);
+        const matchesFilter = !filterTag || rec.hashtags.includes(filterTag);
+        return matchesSearch && matchesFilter;
+    });
+    
+    const allSelected = visibleRecords.length > 0 && visibleRecords.every(r => selectedRecordIds.has(r.id));
+    if (allSelected) visibleRecords.forEach(r => selectedRecordIds.delete(r.id));
+    else visibleRecords.forEach(r => selectedRecordIds.add(r.id));
+    render();
+}
+
+// 선택한 메모 일괄 삭제
+async function deleteSelectedRecords() {
+    if (selectedRecordIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedRecordIds.size}개의 메모를 삭제할까요?`)) return;
+    
+    records = records.filter(r => !selectedRecordIds.has(r.id));
+    selectedRecordIds.clear();
+    render();
+    await triggerAutoSync();
+}
+
+// --- 업무 순서 변경 (Drag & Drop) 로직 ---
+let draggedTaskId = null;
+
+function handleTaskDragStart(e, id) {
+    draggedTaskId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    // 드래그 시 투명도 조절
+    e.target.style.opacity = '0.5';
+}
+
+function handleTaskDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+
+// --- 업무 순서 및 날짜 변경 로직 (위클리 대응 버전) ---
+async function handleTaskDrop(e, targetId) {
+    e.preventDefault();
+    if (draggedTaskId === null || draggedTaskId === targetId) return;
+
+    const draggedIndex = tasks.findIndex(t => t.id === draggedTaskId);
+    const targetIndex = tasks.findIndex(t => t.id === targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+        const targetTask = tasks[targetIndex];
+        const [draggedTask] = tasks.splice(draggedIndex, 1);
+        
+        // 중요: 드래그한 업무의 날짜를 목표 업무의 날짜로 변경합니다 (요일 간 이동 가능)
+        draggedTask.date = targetTask.date;
+        
+        // 새로운 위치에 삽입
+        tasks.splice(targetIndex, 0, draggedTask);
+        
+        render();
+        await triggerAutoSync(); // 변경 사항 구글 시트 저장
+    }
+    draggedTaskId = null;
+}
+
+function handleTaskDragEnd(e) {
+    e.target.style.opacity = '1';
+}
+
+// 드롭다운 선택에 따라 직접입력창 숨기기/보이기
+function toggleTagInput(selectEl, directInputId) {
+    const directInput = document.getElementById(directInputId);
+    if (selectEl.value === 'DIRECT') {
+        directInput.classList.remove('hidden');
+        directInput.focus();
+    } else {
+        directInput.classList.add('hidden');
+    }
+}
+
+async function saveEdit(id) {
+    const text = document.getElementById(`edit-text-${id}`).value.trim();
+    const tag = document.getElementById(`edit-tag-${id}`).value.trim().toUpperCase();
+    const desc = document.getElementById(`edit-desc-${id}`).value.trim();
+
+    if (!text) return alert("내용을 입력해주세요.");
+
+    // 1. 태그 색상 맵 업데이트 (태그의 색상을 여기서 변경한 것으로 간주)
+    if (tag) {
+        tagColorMap[tag] = editingTagStyle;
+    }
+
+    // 2. 업무 데이터 업데이트
+    tasks = tasks.map(t => {
+        if (t.id === id) {
+            return { ...t, text, desc, category: tag, color: editingTaskColor };
+        }
+        return t;
+    });
+
+    editingId = null; 
+    render(); 
+    await triggerAutoSync();
+}
+
+// 1. 고정 태그 버튼 클릭 시 입력창에 태그 입력
+function setTagToInput(tag) {
+    document.getElementById('new-tag-input').value = tag;
+}
+
+// 2. 입력창에 적은 태그를 '고정 태그 목록'에 즉시 추가
+async function pinCurrentTag() {
+    const tagInput = document.getElementById('new-tag-input');
+    const newTag = tagInput.value.trim().toUpperCase();
+    
+    if (!newTag) return alert("고정할 태그 이름을 입력하세요.");
+    
+    if (!frequentTags.includes(newTag)) {
+        frequentTags.push(newTag);
+        // 새 태그는 기본 보라색 스타일 부여
+        tagColorMap[newTag] = "text-indigo-600 bg-indigo-50"; 
+        render(); // 화면을 다시 그려서 버튼 목록에 나타나게 함
+        await triggerAutoSync(); // 구글 시트 저장
+    }
+}
+
+// 3. 기존 addTask 함수 수정 (태그 입력 방식 변경 반영)
+async function addTask() {
+    const text = document.getElementById('new-task-input').value.trim();
+    const tag = document.getElementById('new-tag-input').value.trim().toUpperCase() || "WORK";
+    
+    if (!text) return alert("할 일을 입력해주세요.");
+
+    const newTask = { 
+        id: Date.now(), 
+        text, 
+        desc: document.getElementById('new-desc-input').value.trim(), 
+        date: selectedDate.toDateString(), 
+        completed: false, 
+        category: tag,
+        color: selectedTaskColor 
+    };
+    
+    tasks.push(newTask);
+    render();
+    await triggerAutoSync();
+}
+
+// 1. 태그 색상 선택 함수
+function selectTagStyle(styleClass, btn) {
+    selectedNewTagStyle = styleClass;
+    document.querySelectorAll('.tag-style-dot').forEach(dot => dot.classList.remove('ring-2', 'ring-slate-400', 'ring-offset-1'));
+    btn.classList.add('ring-2', 'ring-slate-400', 'ring-offset-1');
+}
+
+// 2. 태그 고정 및 색상 수정 함수
+async function pinCurrentTag() {
+    const tagInput = document.getElementById('new-tag-input');
+    const newTag = tagInput.value.trim().toUpperCase();
+    
+    if (!newTag) return alert("태그 이름을 입력하세요.");
+    
+    // 이미 있는 태그면 색상만 업데이트, 없으면 새로 추가
+    if (!frequentTags.includes(newTag)) {
+        frequentTags.push(newTag);
+    }
+    tagColorMap[newTag] = selectedNewTagStyle;
+    
+    render(); 
+    await triggerAutoSync();
+}
+
+// 3. 고정 태그 삭제 함수
+async function removeFrequentTag(tag) {
+    if (!confirm(`#${tag} 태그를 고정 목록에서 삭제할까요?`)) return;
+    frequentTags = frequentTags.filter(t => t !== tag);
+    delete tagColorMap[tag];
+    render();
+    await triggerAutoSync();
+}
+
+// 4. 입력창에 태그 세팅
+function setTagToInput(tag) {
+    document.getElementById('new-tag-input').value = tag;
+    // 해당 태그의 기존 색상이 있다면 피커도 해당 색상으로 시각적 업데이트 (선택 사항)
+    if(tagColorMap[tag]) selectedNewTagStyle = tagColorMap[tag];
+}
+
+
 
 window.onload = init;
