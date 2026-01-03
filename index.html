@@ -120,22 +120,44 @@
                         </div>
                     </div>
                     
+                    <div id="week-view-options" class="hidden flex items-center gap-2 ml-2">
+                        <button onclick="toggleWeekDesc()" id="week-desc-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm">
+                            <i id="desc-eye-icon" data-lucide="eye" class="w-3.5 h-3.5"></i>
+                            <span id="desc-toggle-text">메모 표시</span>
+                        </button>
+                        <button onclick="toggleWeekTag()" id="week-tag-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm">
+                            <i id="tag-eye-icon" data-lucide="hash" class="w-3.5 h-3.5"></i>
+                            <span id="tag-toggle-text">태그 표시</span>
+                        </button>
+                    </div>
+
                     <div id="filter-badge" class="hidden flex items-center gap-2 bg-indigo-600 text-white px-3 py-1.5 rounded-full text-xs font-bold animate-fade-in shadow-md">
                         <span id="filter-tag-name">#TAG</span>
                         <button onclick="clearFilter()" class="hover:bg-indigo-500 rounded-full p-0.5"><i data-lucide="x" class="w-3 h-3"></i></button>
                     </div>
-
-                    <div id="week-view-options" class="hidden flex items-center gap-2 ml-2">
-                        <button onclick="toggleWeekDesc()" id="week-desc-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm"><i id="desc-eye-icon" data-lucide="eye" class="w-3.5 h-3.5"></i><span id="desc-toggle-text">메모 표시</span></button>
-                        <button onclick="toggleWeekTag()" id="week-tag-btn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm"><i id="tag-eye-icon" data-lucide="hash" class="w-3.5 h-3.5"></i><span id="tag-toggle-text">태그 표시</span></button>
-                    </div>
                 </div>
+
                 <div class="flex items-center gap-3">
+                    <div id="header-action-group" class="hidden flex items-center gap-2 mr-2 pr-4 border-r border-slate-200">
+                        <button onclick="toggleSelectAll()" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-xs font-bold text-slate-600 shadow-sm">
+                            <i data-lucide="check-square" class="w-3.5 h-3.5"></i> 전체 선택
+                        </button>
+                        
+                        <button onclick="copySelectedTasks()" class="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 rounded-xl transition-all text-xs font-bold text-slate-600">
+                            <i data-lucide="copy" class="w-4 h-4 text-slate-400"></i> 복사하기
+                        </button>
+                        <button onclick="pasteTasks()" class="flex items-center gap-2 px-3 py-1.5 hover:bg-emerald-50 rounded-xl transition-all text-xs font-bold text-emerald-600">
+                            <i data-lucide="clipboard" class="w-4 h-4"></i> 붙여넣기
+                        </button>
+                        <button onclick="deleteSelectedTasks()" class="flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 rounded-xl transition-all text-xs font-bold text-red-500">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i> 일괄 삭제
+                        </button>
+                    </div>
+
                     <button onclick="openSettings()" class="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="settings" class="w-5 h-5"></i></button>
                     <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white shadow-md flex items-center justify-center text-xs font-black text-white">SM</div>
                 </div>
             </header>
-
             <div id="view-container" class="flex-1 p-8 overflow-y-auto"></div>
 
             <div id="bulk-action-bar" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-6 z-50 translate-y-32 transition-transform duration-300 border border-slate-700">

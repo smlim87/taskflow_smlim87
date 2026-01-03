@@ -85,7 +85,8 @@ const tagStyles = [
     { name: 'Orange', class: 'text-orange-600 bg-orange-100' },
     { name: 'Pink', class: 'text-pink-600 bg-pink-100' }
 ];
-let selectedNewTagStyle = tagStyles[0].class; // 기본 선택 색상 (Indigo)
+// script.js 상단
+let selectedNewTagStyle = 'text-indigo-600 bg-indigo-100'; // 이 이름으로 통일
 
 // --- Utilities ---
 // 설정창 열 때 태그 목록 그리기
@@ -104,15 +105,16 @@ function renderTagSettings() {
     const list = document.getElementById('custom-tag-list');
     const picker = document.getElementById('tag-color-picker');
     
-    // 색상 피커 생성
-    picker.innerHTML = tagColorOptions.map(c => `
-        <button onclick="selectedNewTagColor='${c.class}'; renderTagSettings()" 
-            class="w-6 h-6 rounded-full ${c.class.split(' ')[1]} border-2 ${selectedNewTagColor === c.class ? 'border-slate-600' : 'border-transparent'}"></button>
-    `).join('');
+    if (!picker || !list) return;
 
-    // 태그 목록 생성
+    // c => 로 시작했으므로 내부도 c.class를 사용합니다.
+    picker.innerHTML = tagColorOptions.map(c => `
+        <button onclick="selectTagStyle('${c.class}', this)" 
+        class="tag-style-dot w-6 h-6 rounded-full ${c.class.split(' ')[1]} border-2 ${selectedNewTagStyle === c.class ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-transparent'} transition-all"></button>
+    `).join(''); // 마지막에 있던 불필요한 '}'를 제거했습니다.
+
     list.innerHTML = frequentTags.map(tag => `
-        <div class="flex items-center gap-1 px-2 py-1 rounded-lg ${tagColorMap[tag]} text-[10px] font-bold">
+        <div class="flex items-center gap-1 px-2 py-1 rounded-lg ${tagColorMap[tag] || 'bg-slate-100'} text-[10px] font-bold">
             #${tag}
             <button onclick="removeCustomTag('${tag}')" class="hover:text-red-500"><i data-lucide="x" class="w-3 h-3"></i></button>
         </div>
@@ -258,6 +260,7 @@ async function init() {
 }
 
 // --- Core Render Logic ---
+// script.js 내 render 함수 수정
 function render() {
     updateHeader();
     updateSidebarNav();
@@ -268,31 +271,37 @@ function render() {
     
     const container = document.getElementById('view-container');
     const headerDateNav = document.getElementById('header-date-container');
+    const actionGroup = document.getElementById('header-action-group');
+    const weekOptions = document.getElementById('week-view-options');
     
     container.innerHTML = '';
+
+    // 데일리나 위클리일 때만 헤더 액션 그룹(전체선택/복사 등) 표시
+    if (currentView === 'day' || currentView === 'week') {
+        actionGroup?.classList.remove('hidden');
+    } else {
+        actionGroup?.classList.add('hidden');
+    }
 
     if (currentView === 'record') {
         if(headerDateNav) headerDateNav.style.display = 'none';
         renderRecordView(container);
     } else {
         if(headerDateNav) headerDateNav.style.display = 'flex';
-        const weekOptions = document.getElementById('week-view-options');
         
-        // 데일리/위클리 상단 고정 메모
         if (currentView === 'day' || currentView === 'week') {
             container.innerHTML += renderPinnedMemoHTML('top');
         }
 
         if (currentView === 'week') {
-            weekOptions.classList.remove('hidden');
+            weekOptions?.classList.remove('hidden'); // 위클리 옵션 표시
             updateToggleUI();
             renderWeekView(container);
         } else {
-            weekOptions.classList.add('hidden');
+            weekOptions?.classList.add('hidden');
             if (currentView === 'day') renderDayView(container);
             else if (currentView === 'month') {
                 renderMonthView(container);
-                // 먼슬리 하단 고정 메모
                 container.innerHTML += renderPinnedMemoHTML('bottom');
             }
         }
@@ -301,7 +310,6 @@ function render() {
     document.querySelectorAll('.auto-resize-textarea').forEach(autoResize);
     lucide.createIcons();
 }
-
 // 고정 메모 HTML 생성
 function renderPinnedMemoHTML(position = 'top') {
     const key = getMemoKey();
@@ -335,8 +343,11 @@ function updatePinnedMemo(val) {
 }
 
 function renderDayView(container) {
+    // 1. 현재 날짜의 할 일 필터링 및 전체 선택 여부 계산
     const dayTasksFiltered = tasks.filter(t => t.date === selectedDate.toDateString() && (!filterTag || t.category === filterTag));
+    const isAllSelected = dayTasksFiltered.length > 0 && dayTasksFiltered.every(t => selectedTaskIds.has(t.id));
     
+    // 2. 전체 UI 구조를 하나의 변수에 담기
     const dayContent = `
         <div class="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
             <div class="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-200 overflow-hidden mb-6">
@@ -356,8 +367,8 @@ function renderDayView(container) {
                             <span class="text-[9px] font-black text-slate-400 uppercase">태그 색상:</span>
                             <div class="flex gap-1.5">
                                 ${tagColorOptions.map(s => `
-                                    <button onclick="selectedNewTagColor='${s.class}'; render()" 
-                                        class="w-4 h-4 rounded-full ${s.class.split(' ')[1]} border-2 ${selectedNewTagColor === s.class ? 'border-slate-600' : 'border-transparent'} transition-all"></button>
+                                    <button onclick="selectTagStyle('${s.class}', this)" 
+                                        class="tag-style-dot w-4 h-4 rounded-full ${s.class.split(' ')[1]} border-2 ${selectedNewTagStyle === s.class ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-transparent'} transition-all"></button>
                                 `).join('')}
                             </div>
                         </div>
@@ -388,10 +399,20 @@ function renderDayView(container) {
                 </div>
             </div>
 
+            <div class="flex items-center justify-between mb-3 px-2">
+                <div class="flex items-center gap-2 cursor-pointer" onclick="toggleSelectAll()">
+                    <input type="checkbox" ${isAllSelected ? 'checked' : ''} class="w-4 h-4 rounded border-slate-300 text-indigo-600 pointer-events-none">
+                    <span class="text-xs font-bold text-slate-500">전체 선택</span>
+                </div>
+            </div>
+
             <div id="task-list" class="space-y-3"></div>
         </div>`;
     
+    // 3. 한 번에 container에 삽입
     container.innerHTML += dayContent; 
+    
+    // 4. 할 일 아이템 렌더링 및 아이콘 생성
     renderTaskList(dayTasksFiltered);
     lucide.createIcons();
 }
@@ -457,6 +478,7 @@ function renderTaskList(dayTasks) {
                     <button onclick="toggleTask(${task.id})" class="mt-1 shrink-0">
                         ${task.completed ? '<i data-lucide="check-circle-2" class="text-indigo-500 w-6 h-6"></i>' : '<i data-lucide="circle" class="text-slate-300 w-6 h-6"></i>'}
                     </button>
+                    <input type="checkbox" onchange="toggleTaskSelection(${task.id})" ${isSelected ? 'checked' : ''} class="...">
                     <div class="flex-1 min-w-0 text-left">
                         <div class="flex items-center gap-2">
                             <p class="text-[15px] font-bold ${task.completed ? 'line-through text-slate-300' : 'text-slate-700'}">${task.text}</p>
@@ -985,18 +1007,69 @@ function toggleWeekTag() { showWeekTag = !showWeekTag; render(); }
 function updateToggleUI() {
     const descBtn = document.getElementById('week-desc-btn');
     const tagBtn = document.getElementById('week-tag-btn');
+    const descIcon = document.getElementById('desc-eye-icon');
+    const tagIcon = document.getElementById('tag-eye-icon');
+    
     if(!descBtn || !tagBtn) return;
-    if (showWeekDesc) descBtn.classList.add('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
-    else descBtn.classList.remove('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
-    if (showWeekTag) tagBtn.classList.add('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
-    else tagBtn.classList.remove('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
+
+    // 메모 표시 상태 업데이트
+    if (showWeekDesc) {
+        descBtn.classList.add('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
+        descIcon?.setAttribute('data-lucide', 'eye');
+        document.getElementById('desc-toggle-text').innerText = "메모 표시";
+    } else {
+        descBtn.classList.remove('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
+        descIcon?.setAttribute('data-lucide', 'eye-off');
+        document.getElementById('desc-toggle-text').innerText = "메모 숨김";
+    }
+
+    // 태그 표시 상태 업데이트
+    if (showWeekTag) {
+        tagBtn.classList.add('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
+        tagIcon?.setAttribute('data-lucide', 'hash');
+        document.getElementById('tag-toggle-text').innerText = "태그 표시";
+    } else {
+        tagBtn.classList.remove('bg-indigo-50', 'text-indigo-600', 'border-indigo-100');
+        tagIcon?.setAttribute('data-lucide', 'eye-off');
+        document.getElementById('tag-toggle-text').innerText = "태그 숨김";
+    }
+    
+    lucide.createIcons();
 }
 
 function toggleSelectAll() {
-    const visibleTasks = tasks.filter(t => t.date === selectedDate.toDateString() && (!filterTag || t.category === filterTag));
-    const allVisibleSelected = visibleTasks.length > 0 && visibleTasks.every(t => selectedTaskIds.has(t.id));
-    if (allVisibleSelected) visibleTasks.forEach(t => selectedTaskIds.delete(t.id));
-    else visibleTasks.forEach(t => selectedTaskIds.add(t.id));
+    let visibleTasks = [];
+    
+    if (currentView === 'day') {
+        // 데일리: 현재 선택된 날짜의 일정 필터링
+        visibleTasks = tasks.filter(t => t.date === selectedDate.toDateString() && (!filterTag || t.category === filterTag));
+    } else if (currentView === 'week') {
+        // 위클리: 현재 화면에 보이는 7일간의 일정 필터링
+        const start = new Date(selectedDate);
+        const dayNum = start.getDay();
+        let diff = (weekStartDay === 1) ? (dayNum === 0 ? -6 : 1 - dayNum) : -dayNum;
+        start.setDate(start.getDate() + diff);
+        
+        const weekDates = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(start); 
+            d.setDate(d.getDate() + i);
+            weekDates.push(d.toDateString());
+        }
+        visibleTasks = tasks.filter(t => weekDates.includes(t.date) && (!filterTag || t.category === filterTag));
+    }
+
+    if (visibleTasks.length === 0) return;
+
+    // 모든 가시적 업무가 이미 선택되었는지 확인
+    const allVisibleSelected = visibleTasks.every(t => selectedTaskIds.has(t.id));
+    
+    if (allVisibleSelected) {
+        visibleTasks.forEach(t => selectedTaskIds.delete(t.id));
+    } else {
+        visibleTasks.forEach(t => selectedTaskIds.add(t.id));
+    }
+    
     render();
 }
 
@@ -1298,22 +1371,6 @@ function setTagToInput(tag) {
     document.getElementById('new-tag-input').value = tag;
 }
 
-// 2. 입력창에 적은 태그를 '고정 태그 목록'에 즉시 추가
-async function pinCurrentTag() {
-    const tagInput = document.getElementById('new-tag-input');
-    const newTag = tagInput.value.trim().toUpperCase();
-    
-    if (!newTag) return alert("고정할 태그 이름을 입력하세요.");
-    
-    if (!frequentTags.includes(newTag)) {
-        frequentTags.push(newTag);
-        // 새 태그는 기본 보라색 스타일 부여
-        tagColorMap[newTag] = "text-indigo-600 bg-indigo-50"; 
-        render(); // 화면을 다시 그려서 버튼 목록에 나타나게 함
-        await triggerAutoSync(); // 구글 시트 저장
-    }
-}
-
 // 3. 기존 addTask 함수 수정 (태그 입력 방식 변경 반영)
 async function addTask() {
     const text = document.getElementById('new-task-input').value.trim();
@@ -1339,22 +1396,24 @@ async function addTask() {
 // 1. 태그 색상 선택 함수
 function selectTagStyle(styleClass, btn) {
     selectedNewTagStyle = styleClass;
-    document.querySelectorAll('.tag-style-dot').forEach(dot => dot.classList.remove('ring-2', 'ring-slate-400', 'ring-offset-1'));
+    document.querySelectorAll('.tag-style-dot').forEach(dot => {
+        dot.classList.remove('ring-2', 'ring-slate-400', 'ring-offset-1');
+        dot.classList.add('border-transparent');
+    });
     btn.classList.add('ring-2', 'ring-slate-400', 'ring-offset-1');
+    btn.classList.remove('border-transparent');
 }
 
-// 2. 태그 고정 및 색상 수정 함수
+// 태그 고정 및 색상 수정 함수
 async function pinCurrentTag() {
     const tagInput = document.getElementById('new-tag-input');
     const newTag = tagInput.value.trim().toUpperCase();
     
     if (!newTag) return alert("태그 이름을 입력하세요.");
     
-    // 이미 있는 태그면 색상만 업데이트, 없으면 새로 추가
-    if (!frequentTags.includes(newTag)) {
-        frequentTags.push(newTag);
-    }
-    tagColorMap[newTag] = selectedNewTagStyle;
+    if (!frequentTags.includes(newTag)) frequentTags.push(newTag);
+    
+    tagColorMap[newTag] = selectedNewTagStyle; // 여기서 색상을 적용
     
     render(); 
     await triggerAutoSync();
@@ -1376,6 +1435,16 @@ function setTagToInput(tag) {
     if(tagColorMap[tag]) selectedNewTagStyle = tagColorMap[tag];
 }
 
-
+async function deleteTask(id) {
+    if (!confirm("이 일정을 삭제할까요?")) return;
+    
+    // tasks 배열에서 해당 id 제외
+    tasks = tasks.filter(t => t.id !== id);
+    // 선택 목록(selectedTaskIds)에서도 제거
+    selectedTaskIds.delete(id);
+    
+    render(); // 화면 갱신
+    await triggerAutoSync(); // 구글 시트 자동 동기화
+}
 
 window.onload = init;
