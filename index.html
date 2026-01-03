@@ -18,9 +18,21 @@
         ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
         .tag-active { background-color: #f5f3ff; color: #4f46e5 !important; border-left: 3px solid #4f46e5; }
-        .calendar-cell { min-height: 100px; }
+        /* 먼슬리 셀 높이 확장 */
+        .calendar-cell { min-height: 140px; } /* 기존 100px에서 확장 */
         /* 수정 모드 등에서 깜빡임 방지 */
         .record-card { transition: transform 0.2s, box-shadow 0.2s; }
+        /* 자동 높이 조절 textarea를 위한 설정 */
+        .auto-resize-textarea {
+            overflow: hidden;
+            resize: none;
+            min-height: 40px;
+        }
+
+        /* 고정 메모 영역 애니메이션 */
+        .pinned-memo-container {
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 <body class="bg-[#F9FAFB] text-slate-900 overflow-hidden text-[14px]">
