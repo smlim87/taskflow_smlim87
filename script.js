@@ -1,7 +1,7 @@
 // script.js
 
 // 1. 보안 및 설정 관련
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyFOW3H7RP_TOeRd1RvSYlCTRbbaXMi5KDx4anTDSyxmKScbVwcDaMwTok0Oh0J4ZLw/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxdlRMSfLla_FLr6lWrC-VpaAu4t17xll385Adc84kB6WVekgc436222M-tt1a271Tv/exec";
 
 // --- State ---
 let currentView = 'day';
@@ -218,7 +218,8 @@ function renderPinnedMemoHTML(position = 'top') {
                 <span class="text-[9px] text-indigo-300 font-bold opacity-60">자동 크기 조절</span>
             </div>
             <textarea 
-                oninput="updatePinnedMemo(this.value); autoResize(this)" 
+                onblur="updatePinnedMemo(this.value)" 
+                oninput="autoResize(this)" 
                 placeholder="${label}의 루틴이나 중요한 내용을 입력하세요..." 
                 class="auto-resize-textarea w-full bg-transparent border-none text-white placeholder:text-indigo-300 focus:ring-0 outline-none text-sm font-bold resize-none leading-relaxed"
                 rows="1"
@@ -229,8 +230,7 @@ function renderPinnedMemoHTML(position = 'top') {
 function updatePinnedMemo(val) { 
     const key = getMemoKey();
     pinnedMemos[key] = val; 
-    // 입력할 때마다 실시간 동기화를 하려면 아래 주석 해제 (단, 서버 부하 주의)
-    // triggerAutoSync();
+    triggerAutoSync(); // 이제 입력할 때마다 구글 시트에 자동 저장됩니다.
 }
 
 // --- View Renderer: Day ---
@@ -614,11 +614,12 @@ async function toggleTask(id) {
     await triggerAutoSync();
 }
 
-async function deleteTask(id) { 
-    if(!confirm("이 일정을 삭제할까요?")) return;
-    tasks = tasks.filter(t => t.id !== id); 
-    render(); 
-    await triggerAutoSync();
+async function deleteSelectedTasks() {
+    if(!confirm(`선택한 ${selectedTaskIds.size}개의 일정을 삭제할까요?`)) return;
+    tasks = tasks.filter(t => !selectedTaskIds.has(t.id));
+    selectedTaskIds.clear(); // 선택 초기화
+    render();
+    await triggerAutoSync(); // 구글 시트에 즉시 반영
 }
 
 async function saveEdit(id) {
@@ -818,5 +819,46 @@ function updateBulkActionBar() {
 
 function changeToDay(dateString) { selectedDate = new Date(dateString); currentView = 'day'; editingId = null; render(); }
 function changeToDayAndAdd(dateString) { changeToDay(dateString); setTimeout(() => document.getElementById('new-task-input').focus(), 100); }
+
+// 메모 삭제 기능
+async function deleteRecord(id) {
+    if(!confirm("이 메모를 삭제할까요?")) return;
+    records = records.filter(r => r.id !== id);
+    render();
+    await triggerAutoSync(); // 시트에 반영
+}
+
+// 메모 수정 시작
+function startEditRecord(id) {
+    editingRecordId = id;
+    const rec = records.find(r => r.id === id);
+    editingRecordColor = rec.color;
+    render();
+}
+
+// 메모 수정 저장
+async function saveEditRecord(id) {
+    const title = document.getElementById(`edit-rec-title-${id}`).value.trim();
+    const content = document.getElementById(`edit-rec-content-${id}`).value.trim();
+    const tagInput = document.getElementById(`edit-rec-tags-${id}`).value.trim();
+    
+    if (!title) return alert("제목을 입력해주세요.");
+    
+    const hashtags = tagInput ? tagInput.split(',').map(s => s.trim().toUpperCase()).filter(s => s !== "") : [];
+    
+    records = records.map(r => r.id === id ? { 
+        ...r, title, content, hashtags, color: editingRecordColor || r.color 
+    } : r);
+    
+    editingRecordId = null;
+    render();
+    await triggerAutoSync(); // 시트에 반영
+}
+
+// 수정 취소
+function cancelEditRecord() {
+    editingRecordId = null;
+    render();
+}
 
 window.onload = init;
